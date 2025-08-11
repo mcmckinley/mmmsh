@@ -1,2 +1,2 @@
 simple: simple.c
-	gcc simple.c
+	gcc -Wall -Wextra -g -o mmmsh simple.c 

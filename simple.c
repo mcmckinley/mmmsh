@@ -2,51 +2,53 @@
 #include <stdlib.h> // malloc
 #include <string.h> // strlen
 
-// output (int): 0 if success. 1 if error
-int read_and_repeat(void){
+// returns a newly allocated string
+char* read_line(void){
     char *buffer;
-    size_t bufsize = 32;
-    ssize_t characters;
+    size_t bufsize = 0;
+    ssize_t len = getline(&buffer,&bufsize,stdin);
 
-    buffer = (char *)malloc(bufsize * sizeof(char));
+    printf("Read %zd characters", len);
 
-    if (buffer == NULL) {
-        perror("Unable to allocate buffer");
-        return 1;
+    if (len == -1) {
+        free(buffer);
+        return NULL;
     }
 
-    printf("mmmsh$ ");
-    characters = getline(&buffer,&bufsize,stdin);
-    printf("%zu characters recieved.\n",characters);
+    // trim trailing newline
+    if (len > 0 && buffer[len - 1] == '\n') {
+        buffer[len - 1] = '\0';
+    }
 
-
-    size_t len = strlen(buffer);
-    if (len) buffer[len - 1] = '\0';
-
-
-    printf("You typed: '%s'\n",buffer);
-
-    free(buffer);
-
-    return 0;
+    return buffer;
+}
+void repeat(char* line){
+    printf("You typed: '%s'\n",line);
 }
 
 int main() {
     printf("Welcome to my mini shell\n");
-
-    printf("Sum of %d and %d is %d\n", 99, 1,
-        99 + 1);
     
     // infinite loop to repeat what the user says.
 
-    int status = read_and_repeat();
+    int should_exit = 0;
+    int error = 0;
 
-    if (status == 0){
-        printf("Exited successully\n");
-    } else {
-        printf("Exited with error\n");
+    char *line;
+    while(should_exit == 0){
+        line = read_line();
+
+        if (line == NULL) break; // EOF; check what happens without 
+
+        if (strcmp(line, "exit") == 0) {
+            should_exit = 1;
+        } else {
+            repeat(line);
+        }
+
+        free(line);
     }
-    
+
     printf("\n");
     return 0;
 }
