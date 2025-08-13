@@ -21,6 +21,10 @@ char* read_line(void){
     return buffer;
 }
 
+void repeat(char* line){
+    printf("%s\n",line);
+}
+
 // split up a string into a string array, delimited by spaces
 char **parse_args(char *line){
     const int bufsize = 64;
@@ -45,9 +49,29 @@ char **parse_args(char *line){
     return tokens;
 }
 
-void repeat(char* line){
-    printf("%s\n",line);
+
+
+// returns 0 on success, 1 on failure
+int pop_argument(char **args, char **out) {
+    if (!args || !args[0] || !out) {
+        // printf("mmmsh: error in pop_argument");
+        return 1;
+    }
+
+    *out = args[0];
+
+    // Shift everything left
+    for (size_t i = 0; args[i]; i++) {
+        args[i] = args[i + 1];
+    }
+    return 0;
 }
+
+// int change_directory(char** args) {
+
+// }
+
+
 
 int main() {
     printf("Welcome to my mini shell\n");
@@ -70,15 +94,27 @@ int main() {
         printf("mmmsh$ ");
 
         line = read_line();
-
-        if (line == NULL) break; // EOF; check what happens without 
-
-        if (strcmp(line, "exit") == 0) {
-            should_exit = 1;
-        }
-
+        
+        // EOF: done
+        if (line == NULL) break;
 
         char** args = parse_args(line);
+        char* first_arg;
+        
+        // No arguments: continue
+        if (pop_argument(args, &first_arg) == 1){
+            continue;
+        }
+
+        if (strcmp(line, "exit") == 0) {
+            printf("goodbye\n");
+            should_exit = 1;
+        }
+        else if (strcmp(first_arg, "cd") == 0){
+            printf("hi\n");
+        }
+
+     
 
         int i = 0;
         while (args[i] != NULL){
@@ -86,8 +122,8 @@ int main() {
             i++;
         }
         
-        // repeat(line);
         free(line);
+        free(args);
     }
 
     return 0;
