@@ -3,3 +3,4 @@ mmmsh
 *.dSYM
 .bash_history
 input
+.vscode

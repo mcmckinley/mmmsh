@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h> // malloc
 #include <string.h> // strlen
+#include <unistd.h> // pwd, cd
+#include <linux/limits.h> // path
 
 // returns a newly allocated string
 char* read_line(void){
@@ -56,15 +58,15 @@ char **parse_args(char *line, int *argc){
 
 
 // returns 0 on success, 1 on failure
-int pop_argument(char **args, char **out) {
+int get_command(char **args, char **out) {
     if (!args || !out) return 1;
 
     *out = args[0];
 
     // Shift everything left
-    for (size_t i = 0; args[i]; i++) {
-        args[i] = args[i + 1];
-    }
+    // for (size_t i = 0; args[i]; i++) {
+    //     args[i] = args[i + 1];
+    // }
     return 0;
 }
 
@@ -72,13 +74,42 @@ int pop_argument(char **args, char **out) {
 
 // }
 
-void echo_one_arg(char **args){
-    char* output;
-    if (pop_argument(args, &output) == 1){
-        printf("echo: requires 1 argument\n");
-    } else {
-        repeat(output);
+void echo(int argc, char **args){
+    for (int i = 1; i < argc; i++){
+        if (i > 1) putchar(' ');
+        fputs(args[i], stdout);
     }
+    printf("\n");
+}
+
+int print_working_directory(int argc, char **args){
+    if (argc > 1){
+        fputs("pwd: too mamy arguments", stdout);
+    }
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("%s\n", cwd);
+    } else {
+        perror("getcwd() error");
+        return 1;
+    }
+    return 0;
+}
+
+int change_directory (int argc, char **args){
+    if (argc < 2){
+        printf("cd: requires one argument (yeah i know, this is wrong...)\n");
+        return 1;
+    } else if (argc > 2) {
+        printf("cd: too many arguments");
+        return 1;
+    }
+
+    if (chdir(args[1]) != 0) {
+        printf("Error in changing directory");
+        return 1;
+    }
+    return 0;
 }
 
 
@@ -92,9 +123,6 @@ int main() {
     //   exit(1);
     // }
     // printf("Hello world!, process_id(pid) = %d \n",getpid());
-
-    
-    // infinite loop to repeat what the user says.
 
     int should_exit = 0;
     char *line;
@@ -112,7 +140,7 @@ int main() {
         char* first_arg;
 
         // No arguments: continue
-        if (argc == 0 || pop_argument(args, &first_arg) == 1){
+        if (argc == 0 || get_command(args, &first_arg) == 1){
             free(line);
             free(args);
             continue;
@@ -122,11 +150,14 @@ int main() {
             printf("goodbye\n");
             should_exit = 1;
         }
-        else if (strcmp(first_arg, "cd") == 0){
-            printf("hi\n");
-        }
         else if (strcmp(first_arg, "echo") == 0){
-            echo_one_arg(args);
+            echo(argc, args);
+        }
+        else if (strcmp(first_arg, "pwd") == 0){
+            print_working_directory(argc, args);
+        }
+        else if (strcmp(first_arg, "cd") == 0){
+            change_directory(argc, args);
         }
         
         free(line);
