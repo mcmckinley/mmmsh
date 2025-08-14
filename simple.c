@@ -4,7 +4,7 @@
 
 // returns a newly allocated string
 char* read_line(void){
-    char *buffer;
+    char *buffer = NULL;
     size_t bufsize = 0;
     ssize_t len = getline(&buffer,&bufsize,stdin);
 
@@ -26,7 +26,7 @@ void repeat(char* line){
 }
 
 // split up a string into a string array, delimited by spaces
-char **parse_args(char *line){
+char **parse_args(char *line, int *argc){
     const int bufsize = 64;
 
     char **tokens = (char **)malloc(bufsize * sizeof(char*));
@@ -39,12 +39,16 @@ char **parse_args(char *line){
     while (token != NULL) {
         tokens[tokens_index] = token;
         tokens_index++;
-        if (tokens_index >= bufsize){
+        if (tokens_index == bufsize - 1){
             printf("error, too many tokens");
         }
 
         token = strtok(NULL, delimiters);
     }
+
+    tokens[tokens_index] = NULL; // sentinel? I don't understand C array yet
+
+    *argc = tokens_index;
 
     return tokens;
 }
@@ -53,10 +57,7 @@ char **parse_args(char *line){
 
 // returns 0 on success, 1 on failure
 int pop_argument(char **args, char **out) {
-    if (!args || !args[0] || !out) {
-        // printf("mmmsh: error in pop_argument");
-        return 1;
-    }
+    if (!args || !out) return 1;
 
     *out = args[0];
 
@@ -70,6 +71,15 @@ int pop_argument(char **args, char **out) {
 // int change_directory(char** args) {
 
 // }
+
+void echo_one_arg(char **args){
+    char* output;
+    if (pop_argument(args, &output) == 1){
+        printf("echo: requires 1 argument\n");
+    } else {
+        repeat(output);
+    }
+}
 
 
 
@@ -87,9 +97,9 @@ int main() {
     // infinite loop to repeat what the user says.
 
     int should_exit = 0;
-    // int error = 0;
-
     char *line;
+    char** args;
+    int argc;
     while(should_exit == 0){
         printf("mmmsh$ ");
 
@@ -98,11 +108,13 @@ int main() {
         // EOF: done
         if (line == NULL) break;
 
-        char** args = parse_args(line);
+        args = parse_args(line, &argc);
         char* first_arg;
-        
+
         // No arguments: continue
-        if (pop_argument(args, &first_arg) == 1){
+        if (argc == 0 || pop_argument(args, &first_arg) == 1){
+            free(line);
+            free(args);
             continue;
         }
 
@@ -113,18 +125,13 @@ int main() {
         else if (strcmp(first_arg, "cd") == 0){
             printf("hi\n");
         }
-
-     
-
-        int i = 0;
-        while (args[i] != NULL){
-            repeat(args[i]);
-            i++;
+        else if (strcmp(first_arg, "echo") == 0){
+            echo_one_arg(args);
         }
         
         free(line);
         free(args);
     }
-
+    
     return 0;
 }
