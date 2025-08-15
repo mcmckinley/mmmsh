@@ -1,2 +1,4 @@
 echo what
-exit
+echo
+pwd
+ls
