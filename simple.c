@@ -7,6 +7,8 @@
 
 // for suppressing specific unused variable warnings
 #define UNUSED(x) (void)(x)
+#define PARENT_RETURN_VAL 0
+#define CHILD_FAILED_EXECUTE 1
 
 // returns a newly allocated string
 char* read_line(void){
@@ -116,11 +118,20 @@ char* built_in_command_names[] = {
 // EXECUTING A COMMAND
 // 
 
+// returns CHILD_FAILED_EXECUTE if the command failed.
+// else, returns PARENT_RETURN_VAL
 int execute_command(int argc, char **argv) {
     UNUSED(argc);
 
     pid_t pid;
     int status;
+
+    for (int i = 0; built_in_command_names[i]; i++){
+        if (strcmp(argv[0], built_in_command_names[i]) == 0){
+            (*built_in_commands[i])(argc, argv);
+            return PARENT_RETURN_VAL;
+        }
+    }
 
     pid = fork();
     if (pid == 0) {
@@ -128,7 +139,7 @@ int execute_command(int argc, char **argv) {
         if (execvp(argv[0], argv) == -1) {
             perror("mmmsh");
         }
-        return 1;
+        return CHILD_FAILED_EXECUTE;
     } else if (pid < 0) {
         // arises from an error in forking
         perror("mmmsh");
@@ -139,7 +150,7 @@ int execute_command(int argc, char **argv) {
         } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
 
-    return 0;
+    return PARENT_RETURN_VAL;
 }
 
 int main() {
@@ -149,6 +160,7 @@ int main() {
     char *line;
     char** args;
     int argc;
+    int should_exit = 0;
 
     while(1){
         if (interactive) {
@@ -163,24 +175,25 @@ int main() {
 
         args = parse_args(line, &argc);
 
-        // No arguments: continue
-        if (argc == 0 || args[0] == NULL){
-            free(line);
-            free(args);
-            continue;
-        } else if (strcmp(args[0], "exit") == 0) {
-            printf("goodbye\n");
-            free(line);
-            free(args);
-            break;
+        int result;
+
+        if (argc > 0 && args[0]){
+            if (strcmp(args[0], "exit") == 0) {
+                puts("goodbye");
+                should_exit = 1;
+            } else {
+                result = execute_command(argc, args);
+            }
         }
 
-        int success = execute_command(argc, args);
-        
         free(line);
         free(args);
 
-        if (success == 1){
+        if (should_exit == 1){
+            break;
+        }
+
+        if (result == CHILD_FAILED_EXECUTE){
             _exit(EXIT_FAILURE);
         }
     }
