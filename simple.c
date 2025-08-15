@@ -58,21 +58,18 @@ char **parse_args(char *line, int *argc){
 
 
 // returns 0 on success, 1 on failure
+// this is likely useless, and i will remove it.
 int get_command(char **args, char **out) {
     if (!args || !out) return 1;
 
     *out = args[0];
 
-    // Shift everything left
-    // for (size_t i = 0; args[i]; i++) {
-    //     args[i] = args[i + 1];
-    // }
     return 0;
 }
 
-// int change_directory(char** args) {
-
-// }
+// 
+// BUILTIN COMMANDS
+// 
 
 void echo(int argc, char **args){
     for (int i = 1; i < argc; i++){
@@ -112,17 +109,38 @@ int change_directory (int argc, char **args){
     return 0;
 }
 
+// 
+// EXECUTING A COMMAND
+// 
+
+int fork_and_execute(int argc, char **argv) {
+    pid_t pid, wpid;
+    int status;
+
+    pid = fork();
+    if (pid == 0) {
+        // Child process
+        if (execvp(argv[0], argv) == -1) {
+            perror("mmmsh");
+        }
+        exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+        perror("mmmsh");
+    } else {
+        // Parent process
+        do {
+            wpid = waitpid(pid, &status, WUNTRACED);
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+    }
+
+  return 1;
+}
+
 
 
 int main() {
     printf("Welcome to my mini shell\n");
 
-    // pid_t p = fork();
-    // if(p<0){
-    //   perror("fork fail");
-    //   exit(1);
-    // }
-    // printf("Hello world!, process_id(pid) = %d \n",getpid());
 
     int should_exit = 0;
     char *line;
@@ -158,7 +176,10 @@ int main() {
         }
         else if (strcmp(first_arg, "cd") == 0){
             change_directory(argc, args);
+        } else if (strcmp(first_arg, "ls") == 0){
+            fork_and_execute(argc, args);
         }
+
         
         free(line);
         free(args);
