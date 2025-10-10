@@ -8,6 +8,13 @@ todo:
 - tests
 - piping & redirection
 - any other important shell features I might have missed
-
-Some things I would do if I had more time:
 - scrolling up/down through previous commands. could be really easy or a nuisance to implement
+- colors and fun stuff
+
+
+
+**Difficult to Implement**
+
+Writing built in commands: easy
+Implementing piping: medium
+Combinining these two: *hard*
