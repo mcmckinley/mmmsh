@@ -10,6 +10,8 @@
 #define PARENT_RETURN_VAL 0
 #define CHILD_FAILED_EXECUTE 1
 #define DID_NOT_EXECUTE 2
+#define ERR_COULD_NOT_CREATE_PIPE 3
+
 
 // returns a newly allocated string
 char* read_line(void){
@@ -118,81 +120,67 @@ char* built_in_command_names[] = {
     "cd"
 };
 
-// 
-// EXECUTING A COMMAND
-// 
-
-// returns CHILD_FAILED_EXECUTE if the command failed.
-// else, returns PARENT_RETURN_VAL
-
-
-// Describes an element in the pipeline.
-// Can be one of two things:
-// 1. a command, with argv and argc
-// 2. an operator, like | > >>
+// A single command to run
 struct command {
     char** argv;
     int argc;
-    int is_special_operator;
-    char special_operator;
 };
 
 // takes an array of tokens from the command prompt, and chops them up into an array of commands
-struct command* parse_pipeline(char **argv, int* num_commands){
+struct command* parse_pipeline(int argc, char **argv, int* num_commands){
     *num_commands = 0;
-    const int command_bufsize = 256;
-    int argv_index = 0;
+    int command_array_bufsize = 256; // this can grow dynamically
+    int command_index = 0;
     
     // allocating a static sized buffer for simplicity (and laziness)
     // if exceeded just give up and print an error 
-    struct command* commands = (struct command*)malloc(command_bufsize * sizeof(struct command));
-    
-    
-    for (int i = 0; i < command_bufsize; i++){
-        if (!argv[argv_index]){
-            *num_commands = i;
-            break;
-        }
+    struct command* commands = (struct command*)malloc(command_array_bufsize * sizeof(struct command));
 
-        // create a command struct to be appended to the commands list
-        struct command current_command;
-        current_command.argv = (char **)malloc(command_bufsize * sizeof(char *));
-        current_command.argc = 0;
-
-        // fill the argv of the command struct
-        if (strcmp(argv[argv_index], "|") != 0){
-            printf("normal token found @ %d\n", argv_index);
-            printf("%s\n", argv[argv_index]);
-
-            // read in argc and argv of current command
-            current_command.is_special_operator = 0;
-            int token_index = 0;
-            while (argv[argv_index] && strcmp(argv[argv_index], "|") != 0){
-                current_command.argv[token_index] = argv[argv_index];
-                argv_index++;
-                token_index++;
-            }
-            current_command.argc = token_index;
+    for (int i = 0; i < argc; i++){
+        
+        // Start: we're expecting a normal token
+        if (strcmp(argv[i], "|") == 0){
+            puts("unexpected token");
         } 
-        // Token is an operator
-        else {
-            printf("special op found @ %d\n", argv_index);
-            current_command.special_operator = '|';
-            current_command.is_special_operator = 1;
-            current_command.argc = 1;
-            current_command.argv = NULL;
-            argv_index++;
+        
+        int indiv_command_argv_bufsize = 256; // this can grow dynamically
+        
+        struct command current_command;
+        current_command.argv = (char **)malloc(indiv_command_argv_bufsize * sizeof(char *));
+        current_command.argc = 0;
+        
+        int token_index = 0;
+        while (i < argc && strcmp(argv[i], "|") != 0){
+            current_command.argv[token_index] = argv[i];
+            token_index++;
+            // see if this command needs more space to store its tokens
+            if (token_index == indiv_command_argv_bufsize){
+                indiv_command_argv_bufsize *= 2;
+                current_command.argv = (char **)realloc(current_command.argv, indiv_command_argv_bufsize * sizeof(char *));
+            }
+            i++;
         }
+        current_command.argc = token_index;
+        commands[command_index] = current_command;
+        command_index++;
 
-        if (i == command_bufsize - 1){
-            perror("pipeline reached capacity");
+        // We've read everything in the input stream. Done!
+        if (i == argc) 
+            break;
+
+        // Input stream still has a pipe. continue
+        i++;
+        
+        // see if we've run out of space for commands
+        if (command_index == command_array_bufsize){
+            command_array_bufsize *= 2;
+            commands = (struct command*)realloc(commands, command_array_bufsize * sizeof(struct command));
         }
-
-        commands[i] = current_command;
     }
+    *num_commands = command_index;
 
     return commands;
-};
+}
 
 // void free_command_list(command* command_list){
 //     for (int i = 0; command_list[i]; i++){
@@ -200,48 +188,84 @@ struct command* parse_pipeline(char **argv, int* num_commands){
 //     }
 // }
 
-// takes in a string of user input, and executes it.
-// recognizes 
-int execute_full_user_input(int argc, char **argv) {
+// takes in a command_list of user input, and executes it
+// recognized operators: |
+int execute_full_user_input(int argc, struct command* command_list) {
+    puts("entering execute_full_user_input");
     UNUSED(argc);
+
+    // int num_pipes = 0;
+    for (int i = 0; i < argc; i++)
+        continue;
+        // if (command_list[i]) num_pipes++;
+
+    // INITIALIZE THE PIPES
+    // for every command in the command_list, there is an input pipe and an output pipe.
+    // the command at the beginning reads from stdin
+    // the command at the end writes to stdout
+    // everything in the middle writes/reads to/from its neighbor.
+    // Currently, this structure only works with the pipe | operator.
+    // in the future, I hope to implement more operators
+
+    // int pipes[num_pipes][2];
+    // for (int i = 0; i < num_pipes; i++){
+    //     if (pipe(pipes[i]) < 0){
+    //         return ERR_COULD_NOT_CREATE_PIPE;
+    //     }
+    // }
+
 
     pid_t pid;
     int status;
 
 
+    // structure outline:
     // loop
     //  fork()
-    //      if child:
-            //  command to execute = i
+    //  if child:
+    //      command to execute = i
     //  else
-        // continue
+    //      continue
 
 
-    pid = fork();
-
-    if (pid == 0) {
-        // child process lands here
-        for (int i = 0; built_in_command_names[i]; i++){
-            if (strcmp(argv[0], built_in_command_names[i]) == 0){
-                (*built_in_commands[i])(argc, argv);
-                return PARENT_RETURN_VAL;
+    for (int command_index = 0; command_index < argc; command_index++){
+        struct command current_command = command_list[command_index];
+        pid = fork();
+        // Child process
+        if (pid == 0) {
+            
+            // check builtin
+            for (int i = 0; built_in_command_names[i]; i++){
+                if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
+                    (*built_in_commands[i])(current_command.argc, current_command.argv);
+                    _exit(EXIT_SUCCESS);
+                }
             }
-        }
-        if (execvp(argv[0], argv) == -1) {
+            // execute normally
+            if (execvp(current_command.argv[0], current_command.argv) == -1) {
+                perror("mmmsh");
+            } 
+            // execvp ONLY returns if an error occurred.
+            return CHILD_FAILED_EXECUTE;
+        } else if (pid < 0) {
+            // arises from an error in forking
             perror("mmmsh");
+            return CHILD_FAILED_EXECUTE;
+        } else {
+            // We're in the parent
+            // Track the child, and wait for it to finish.
+            do {
+                waitpid(pid, &status, WUNTRACED);
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
         }
-        return CHILD_FAILED_EXECUTE;
-    } else if (pid < 0) {
-        // arises from an error in forking
-        perror("mmmsh");
-    } else {
-        // Parent process
-        do {
-            waitpid(pid, &status, WUNTRACED);
-        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
+
+
     return PARENT_RETURN_VAL;
-};
+}
+
+// int execute_single_command (struct command command)
+
 
 // int execute_pipeline(int argc, char **argv){
 
@@ -274,11 +298,12 @@ int main() {
 
         
 
-        int result;
+        int result = -1;
 
         // ignore the input if empty
         if (argc == 0 || !args[0]){
             result = DID_NOT_EXECUTE;
+            // oooOooOOooo controversial. trust me it belongs here.
             goto cleanup;
         }
 
@@ -290,21 +315,14 @@ int main() {
         // parse the arguments into an array of 'commands'.
         // these can be commands, or operators, such as |, >, >>
         int num_commands;
-        struct command* command_list = parse_pipeline(args, &num_commands);
+        struct command* command_list = parse_pipeline(argc, args, &num_commands);
 
         printf("num commands: %d\n", num_commands);
 
-        for (int i = 0; i < num_commands; i++){
-            printf("argc: %d\n", command_list[i].argc);
-            if (command_list[i].is_special_operator){
-                printf("    special op: %c\n", command_list[i].special_operator);
-            } else {
-                printf("    normal tok: %s\n", command_list[i].argv[0]);
-            }
-        }
-        puts("ending prematurely");
-        result = DID_NOT_EXECUTE;
-        goto cleanup;
+        // for (int i = 0; i < num_commands; i++){
+        //     printf("    tok: %s\n", command_list[i].argv[0]);
+        // }
+        // puts("moving on to command");
 
 
 
@@ -313,7 +331,7 @@ int main() {
             puts("goodbye");
             should_exit = 1;
         } else {
-            result = execute_full_user_input(argc, args);
+            result = execute_full_user_input(num_commands, command_list);
         }
 
         cleanup:
@@ -323,9 +341,16 @@ int main() {
         if (should_exit == 1){
             break;
         }
+        // I feel like i should do something different here
         if (result == CHILD_FAILED_EXECUTE){
-            _exit(EXIT_FAILURE);
-        }
+            // why exit here? why not just print error and start over?
+            // _exit(EXIT_FAILURE);
+            puts("error in executing");
+        } 
+        // else if (result == PARENT_RETURN_VAL){
+        //     _exit(EXIT_SUCCESS);
+        // }
+
     }
     
     return 0;
