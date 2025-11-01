@@ -137,7 +137,6 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
     struct command* commands = (struct command*)malloc(command_array_bufsize * sizeof(struct command));
 
     for (int i = 0; i < argc; i++){
-        
         // Start: we're expecting a normal token
         if (strcmp(argv[i], "|") == 0){
             puts("unexpected token");
@@ -155,6 +154,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
             token_index++;
             // see if this command needs more space to store its tokens
             if (token_index == indiv_command_argv_bufsize){
+                puts("REALLOCATING INDIV_CMD_ARRAY");
                 indiv_command_argv_bufsize *= 2;
                 current_command.argv = (char **)realloc(current_command.argv, indiv_command_argv_bufsize * sizeof(char *));
             }
@@ -165,14 +165,13 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
         command_index++;
 
         // We've read everything in the input stream. Done!
-        if (i == argc) 
+        if (i == argc){
             break;
-
-        // Input stream still has a pipe. continue
-        i++;
+        }
         
         // see if we've run out of space for commands
         if (command_index == command_array_bufsize){
+            puts("REALLOCATING COMMAND_ARRAY_BUFSIZE");
             command_array_bufsize *= 2;
             commands = (struct command*)realloc(commands, command_array_bufsize * sizeof(struct command));
         }
@@ -194,25 +193,18 @@ int execute_full_user_input(int argc, struct command* command_list) {
     puts("entering execute_full_user_input");
     UNUSED(argc);
 
-    // int num_pipes = 0;
-    for (int i = 0; i < argc; i++)
-        continue;
-        // if (command_list[i]) num_pipes++;
-
     // INITIALIZE THE PIPES
     // for every command in the command_list, there is an input pipe and an output pipe.
     // the command at the beginning reads from stdin
     // the command at the end writes to stdout
     // everything in the middle writes/reads to/from its neighbor.
-    // Currently, this structure only works with the pipe | operator.
-    // in the future, I hope to implement more operators
 
-    // int pipes[num_pipes][2];
-    // for (int i = 0; i < num_pipes; i++){
-    //     if (pipe(pipes[i]) < 0){
-    //         return ERR_COULD_NOT_CREATE_PIPE;
-    //     }
-    // }
+    int pipes[argc][2];
+    for (int i = 0; i < argc; i++){
+        if (pipe(pipes[i]) < 0){
+            return ERR_COULD_NOT_CREATE_PIPE;
+        }
+    }
 
 
     pid_t pid;
@@ -229,6 +221,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
 
 
     for (int command_index = 0; command_index < argc; command_index++){
+        printf("executing command %d\n", command_index);
         struct command current_command = command_list[command_index];
         pid = fork();
         // Child process
@@ -271,6 +264,13 @@ int execute_full_user_input(int argc, struct command* command_list) {
 
 // }
 
+void print_command_list(struct command* command_list, int l){
+    puts("cmd list argc sizes:");
+    for (int i = 0; i < l; i++){
+        printf("%d: %d\n", i, command_list[i].argc);
+    }
+}
+
 
 
 int main() {
@@ -291,7 +291,10 @@ int main() {
         line = read_line();
         
         // EOF: done
-        if (line == NULL) break;
+        if (line == NULL) {
+            printf("\n");
+            break;
+        }
 
         // collect all arguments
         args = parse_args(line, &argc);
@@ -307,22 +310,22 @@ int main() {
             goto cleanup;
         }
 
-        for (int i = 0; i < argc; i++){
-            printf("token %d: %s\n", i, args[i]);
-        }
-
-
         // parse the arguments into an array of 'commands'.
         // these can be commands, or operators, such as |, >, >>
         int num_commands;
         struct command* command_list = parse_pipeline(argc, args, &num_commands);
 
-        printf("num commands: %d\n", num_commands);
+        print_command_list(command_list, num_commands);
 
         // for (int i = 0; i < num_commands; i++){
-        //     printf("    tok: %s\n", command_list[i].argv[0]);
+        //     struct command cmd = command_list[num_commands];
+        //     printf("    %d (%d): ", i, cmd.argc);
+        //     for (int i = 0; i < cmd.argc; i++){
+        //         printf("%s ", cmd.argv[i]);
+        //     }
+
+        //     puts("\n");
         // }
-        // puts("moving on to command");
 
 
 
@@ -341,11 +344,8 @@ int main() {
         if (should_exit == 1){
             break;
         }
-        // I feel like i should do something different here
         if (result == CHILD_FAILED_EXECUTE){
-            // why exit here? why not just print error and start over?
-            // _exit(EXIT_FAILURE);
-            puts("error in executing");
+            _exit(EXIT_FAILURE);
         } 
         // else if (result == PARENT_RETURN_VAL){
         //     _exit(EXIT_SUCCESS);
