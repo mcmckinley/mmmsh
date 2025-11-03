@@ -2,7 +2,7 @@
 #include <stdlib.h> 
 #include <string.h>
 #include <unistd.h>
-#include <linux/limits.h>
+#include <limits.h>
 #include <sys/wait.h>
 
 // for suppressing specific unused variable warnings
@@ -34,32 +34,20 @@ char* read_line(void){
 
 // split up a string into a string array, delimited by spaces
 char **parse_args(char *line, int *argc){
-    const int bufsize = 64;
-
+    int bufsize = 64;
     char **tokens = (char **)malloc(bufsize * sizeof (char*));
-    char *token;
-    char *delimiters = " ";
     int tokens_index = 0;
 
-    token = strtok(line, delimiters);
-    // printf("1st token - %s\n", token);
-
-    while (token != NULL) {
-        tokens[tokens_index] = token;
-        tokens_index++;
-        if (tokens_index == bufsize - 1){
-            // this is flawed i beleive
-            printf("error, too many tokens");
+    for (char *tok = strtok(line, " \t"); tok; tok = strtok(NULL, " \t")) {
+        if (tokens_index + 1 >= bufsize){
+            bufsize *= 2; 
+            tokens = realloc(tokens, bufsize * sizeof *tokens);
         }
-
-        token = strtok(NULL, delimiters);
-        // printf("token - %s\n", token);
+        tokens[tokens_index++] = tok;
     }
-
-    tokens[tokens_index] = NULL; // sentinel? I don't understand C array yet
+    tokens[tokens_index] = NULL;
 
     *argc = tokens_index;
-
     return tokens;
 }
 
@@ -76,37 +64,37 @@ int echo(int argc, char **args){
     return 0;
 }
 
+int change_directory(int argc, char **args){
+    const char *target = (argc == 1) ? getenv("HOME") : args[1];
+    if (!target) { 
+        perror("cd: HOME not set\n");
+        return 1;
+    }
+    if (argc > 2) { 
+        perror("cd: too many arguments\n");
+        return 1;
+    }
+    if (chdir(target) != 0) {
+        perror("cd");
+        return 1;
+    }
+    return 0;
+}
+
 int print_working_directory(int argc, char **args){
     UNUSED(args);
-    if (argc > 1){
-        fputs("pwd: too mamy arguments", stdout);
-    }
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf("%s\n", cwd);
-    } else {
-        perror("getcwd() error");
+    if (argc > 1) {
+        perror("pwd: too many arguments\n");
         return 1;
     }
+    char *cwd = getcwd(NULL, 0);
+    if (!cwd) {
+        perror("pwd");
+        return 1;
+    }
+    free(cwd);
     return 0;
 }
-
-int change_directory (int argc, char **args){
-    if (argc == 1){
-        if (chdir("/") != 0) {
-            printf("Error in changing to home directory\n");
-            return 1;
-        }
-    } else if (argc > 2) {
-        printf("cd: too many arguments");
-        return 1;
-    } else if (chdir(args[1]) != 0) {
-        printf("Error in changing directory");
-        return 1;
-    }
-    return 0;
-}
-
 
 int (*built_in_commands[]) (int, char **) = {
   &echo,
@@ -117,8 +105,10 @@ int (*built_in_commands[]) (int, char **) = {
 char* built_in_command_names[] = {
     "echo",
     "pwd",
-    "cd"
+    "cd",
 };
+
+static const size_t num_builtins = sizeof(built_in_command_names)/sizeof(built_in_command_names[0]);
 
 // A single command to run
 struct command {
@@ -153,7 +143,6 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
             token_index++;
             // see if this command needs more space to store its tokens
             if (token_index == indiv_command_argv_bufsize){
-                puts("REALLOCATING INDIV_CMD_ARRAY");
                 indiv_command_argv_bufsize *= 2;
                 current_command.argv = (char **)realloc(current_command.argv, (indiv_command_argv_bufsize + 1) * sizeof(char *));
             }
@@ -171,7 +160,6 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
         
         // see if we've run out of space for commands
         if (command_index == command_array_bufsize){
-            puts("REALLOCATING COMMAND_ARRAY_BUFSIZE");
             command_array_bufsize *= 2;
             commands = (struct command*)realloc(commands, (command_array_bufsize + 1) * sizeof(struct command));
         }
@@ -225,7 +213,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
             }
 
             // check builtin
-            for (int i = 0; built_in_command_names[i]; i++){
+            for (size_t i = 0; i < num_builtins; i++){
                 if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
                     (*built_in_commands[i])(current_command.argc, current_command.argv);
                     _exit(EXIT_SUCCESS);
@@ -253,9 +241,10 @@ int execute_full_user_input(int argc, struct command* command_list) {
     return PARENT_RETURN_VAL;
 }
 
+// two special commands: exit and cd
+// returns: 0 keep running; 1 request exit
 
-
-int main() {
+int main(void) {
     // tells you wether the input is coming from the terminal.
     int interactive = isatty(STDIN_FILENO);
 
@@ -291,19 +280,26 @@ int main() {
             goto early_exit;
         }
 
+        
         // parse the arguments into an array of commands. 
         // If there is more than 1 command, they are implied to have a pipe operator between them
         int num_commands;
         struct command* command_list = parse_pipeline(argc, args, &num_commands);
-
-
-        // handle the input
-        if (strcmp(args[0], "exit") == 0) {
-            puts("goodbye");
-            should_exit = 1;
-            goto early_exit;
+        
+        
+        // first, check for the two builtins, exit and cd:
+        if (num_commands == 1){
+            if (strcmp(command_list[0].argv[0], "exit") == 0){
+                should_exit = 1;
+                goto early_exit;
+            }
+            if (strcmp(command_list[0].argv[0], "cd") == 0){
+                (*change_directory)(command_list[0].argc, command_list[0].argv);
+                goto early_exit;
+            }
         }
-
+        
+        // Normal command: execute
         result = execute_full_user_input(num_commands, command_list);
 
         // Cleanup
