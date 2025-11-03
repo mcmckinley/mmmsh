@@ -185,38 +185,43 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
 
 
 int execute_full_user_input(int argc, struct command* command_list) {
-    // INITIALIZE THE PIPES
+    if (argc <= 0) return 0;
+
     // for every command in the command_list, there is an input pipe and an output pipe.
     // the command at the beginning reads from stdin
     // the command at the end writes to stdout
     // everything in the middle writes/reads to/from its neighbor.
 
     int pipes[argc][2];
-    for (int i = 0; i < argc; i++){
+    for (int i = 0; i < argc - 1; i++){
         if (pipe(pipes[i]) < 0){
             return ERR_COULD_NOT_CREATE_PIPE;
         }
     }
 
-    pid_t pid;
-    int status;
+    // multiple process: multiple pids to wait for
+    pid_t pids[argc];
 
     for (int command_index = 0; command_index < argc; command_index++){
         struct command current_command = command_list[command_index];
-        pid = fork();
+        int pid = fork();
         if (pid == 0) {
+            pids[command_index] = pid;
             // Child process
-
+            // Read from previous pipe, not STDIN
             if (command_index != 0){
-                // Read from previous pipe, not STDIN
-                dup2(pipes[command_index - 1][0], 0);
-                close(pipes[command_index - 1][0]);
+                dup2(pipes[command_index - 1][0], STDIN_FILENO);
+            }
+            
+            // Write to next pipe, not STDOUT
+            if (command_index < argc - 1){
+                dup2(pipes[command_index][1], STDOUT_FILENO);
             }
 
-            if (command_index < argc - 1){
-                // Write to next pipe, not STDOUT
-                dup2(pipes[command_index][1], 1);
-                close(pipes[command_index][1]);
+            // in the child, we need to close every pipe, not just the one we just used
+            for (int j = 0; j < argc - 1; j++){
+                close(pipes[j][0]);
+                close(pipes[j][1]);
             }
 
             // check builtin
@@ -231,28 +236,19 @@ int execute_full_user_input(int argc, struct command* command_list) {
                 perror("mmmsh");
             } 
             // execvp ONLY returns if an error occurred.
-            return CHILD_FAILED_EXECUTE;
-        } else if (pid < 0) {
-            // arises from an error in forking
-            perror("mmmsh");
-            return CHILD_FAILED_EXECUTE;
-        } else {
-            // We're in the parent
-            // close previous reader if we're not at start.
-            if (command_index != 0){
-                close(pipes[command_index - 1][0]);
-            }
-            // close next writer if we're not at end
-            if (command_index < argc - 1){
-                close(pipes[command_index][1]);
-            }
-            
-            // Track the child, and wait for it to finish.
-            do {
-                waitpid(pid, &status, WUNTRACED);
-            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            _exit(EXIT_FAILURE);
         }
     }
+    // parent closes all pipes
+    for (int i = 0; i < argc - 1; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+
+    // parent must wait for everything
+    int status = 0;
+    for (int i = 0; i < argc; i++)
+        waitpid(pids[i], &status, 0);
 
     return PARENT_RETURN_VAL;
 }
@@ -277,10 +273,8 @@ int main() {
         line = read_line();
         
         // EOF: done
-        if (line == NULL) {
-            printf("\n");
+        if (line == NULL)
             break;
-        }
 
         // collect all arguments
         args = parse_args(line, &argc);
@@ -288,6 +282,7 @@ int main() {
         
 
         int result = -1;
+        UNUSED(result); // i'm still deciding whether or not to keep it. long term, it makes sense to have it.
 
         // ignore the input if empty
         if (argc == 0 || !args[0]){
@@ -323,8 +318,6 @@ int main() {
 
         if (should_exit)
             break;
-        if (result == CHILD_FAILED_EXECUTE)
-            _exit(EXIT_FAILURE);
     }
     
     return 0;
