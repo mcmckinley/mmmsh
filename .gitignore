@@ -5,3 +5,4 @@ mmmsh
 input
 .vscode
 .DS_Store
+valgrind-out.txt

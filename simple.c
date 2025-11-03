@@ -132,9 +132,8 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
     int command_array_bufsize = 256; // this can grow dynamically
     int command_index = 0;
     
-    // allocating a static sized buffer for simplicity (and laziness)
-    // if exceeded just give up and print an error 
-    struct command* commands = (struct command*)malloc(command_array_bufsize * sizeof(struct command));
+    // allocating a dynamically sized buffer
+    struct command* commands = (struct command*)malloc((command_array_bufsize + 1) * sizeof(struct command));
 
     for (int i = 0; i < argc; i++){
         // Start: we're expecting a normal token
@@ -142,10 +141,10 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
             puts("unexpected token");
         } 
         
-        int indiv_command_argv_bufsize = 256; // this can grow dynamically
+        int indiv_command_argv_bufsize = 256; // this can grow dynamically. excludes NULL
         
         struct command current_command;
-        current_command.argv = (char **)malloc(indiv_command_argv_bufsize * sizeof(char *));
+        current_command.argv = (char **)malloc((indiv_command_argv_bufsize + 1) * sizeof(char *));
         current_command.argc = 0;
         
         int token_index = 0;
@@ -156,11 +155,12 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
             if (token_index == indiv_command_argv_bufsize){
                 puts("REALLOCATING INDIV_CMD_ARRAY");
                 indiv_command_argv_bufsize *= 2;
-                current_command.argv = (char **)realloc(current_command.argv, indiv_command_argv_bufsize * sizeof(char *));
+                current_command.argv = (char **)realloc(current_command.argv, (indiv_command_argv_bufsize + 1) * sizeof(char *));
             }
             i++;
         }
         current_command.argc = token_index;
+        current_command.argv[token_index] = NULL; // silences valgrind warning
         commands[command_index] = current_command;
         command_index++;
 
@@ -173,10 +173,11 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
         if (command_index == command_array_bufsize){
             puts("REALLOCATING COMMAND_ARRAY_BUFSIZE");
             command_array_bufsize *= 2;
-            commands = (struct command*)realloc(commands, command_array_bufsize * sizeof(struct command));
+            commands = (struct command*)realloc(commands, (command_array_bufsize + 1) * sizeof(struct command));
         }
     }
     *num_commands = command_index;
+    commands[command_index].argv = NULL;
 
     return commands;
 }
@@ -323,7 +324,7 @@ int main() {
         }
 
 
-        for (int i = 0; i < argc; i++){
+        for (int i = 0; i < num_commands; i++){
             free(command_list[i].argv);
         }
 
