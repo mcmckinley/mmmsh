@@ -181,18 +181,9 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
     return commands;
 }
 
-// void free_command_list(command* command_list){
-//     for (int i = 0; command_list[i]; i++){
-//         free(command_list[i]);
-//     }
-// }
 
-// takes in a command_list of user input, and executes it
-// recognized operators: |
+
 int execute_full_user_input(int argc, struct command* command_list) {
-    puts("entering execute_full_user_input");
-    UNUSED(argc);
-
     // INITIALIZE THE PIPES
     // for every command in the command_list, there is an input pipe and an output pipe.
     // the command at the beginning reads from stdin
@@ -206,27 +197,40 @@ int execute_full_user_input(int argc, struct command* command_list) {
         }
     }
 
-
     pid_t pid;
     int status;
-
-
-    // structure outline:
-    // loop
-    //  fork()
-    //  if child:
-    //      command to execute = i
-    //  else
-    //      continue
-
 
     for (int command_index = 0; command_index < argc; command_index++){
         printf("executing command %d\n", command_index);
         struct command current_command = command_list[command_index];
+
+        // for (size_t i = 0; argv[i]; i++) {
+        //     size_t L = strnlen(argv[i], 1<<20);
+        //     if (L == (1<<20)) { 
+        //         fprintf(stderr, "arg %zu not NUL-terminated\n", i); abort(); 
+        //     }
+        // }
+
+        
+
+        // If there's something ahead in the pipeline, open a pipe to write to.
+
         pid = fork();
-        // Child process
         if (pid == 0) {
-            
+            // Child process
+
+            if (command_index != 0){
+                // Read from previous pipe, not STDIN
+                dup2(pipes[command_index - 1][0], 0);
+                close(pipes[command_index - 1][0]);
+            }
+
+            if (command_index < argc - 1){
+                // Write to next pipe, not STDOUT
+                dup2(pipes[command_index][1], 1);
+                close(pipes[command_index][1]);
+            }
+
             // check builtin
             for (int i = 0; built_in_command_names[i]; i++){
                 if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
@@ -246,6 +250,15 @@ int execute_full_user_input(int argc, struct command* command_list) {
             return CHILD_FAILED_EXECUTE;
         } else {
             // We're in the parent
+            // close previous reader if we're not at start.
+            if (command_index != 0){
+                close(pipes[command_index - 1][0]);
+            }
+            // close next writer if we're not at end
+            if (command_index < argc - 1){
+                close(pipes[command_index][1]);
+            }
+            
             // Track the child, and wait for it to finish.
             do {
                 waitpid(pid, &status, WUNTRACED);
@@ -253,22 +266,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
         }
     }
 
-
     return PARENT_RETURN_VAL;
-}
-
-// int execute_single_command (struct command command)
-
-
-// int execute_pipeline(int argc, char **argv){
-
-// }
-
-void print_command_list(struct command* command_list, int l){
-    puts("cmd list argc sizes:");
-    for (int i = 0; i < l; i++){
-        printf("%d: %d\n", i, command_list[i].argc);
-    }
 }
 
 
@@ -307,26 +305,13 @@ int main() {
         if (argc == 0 || !args[0]){
             result = DID_NOT_EXECUTE;
             // oooOooOOooo controversial. trust me it belongs here.
-            goto cleanup;
+            goto early_exit;
         }
 
         // parse the arguments into an array of 'commands'.
         // these can be commands, or operators, such as |, >, >>
         int num_commands;
         struct command* command_list = parse_pipeline(argc, args, &num_commands);
-
-        print_command_list(command_list, num_commands);
-
-        // for (int i = 0; i < num_commands; i++){
-        //     struct command cmd = command_list[num_commands];
-        //     printf("    %d (%d): ", i, cmd.argc);
-        //     for (int i = 0; i < cmd.argc; i++){
-        //         printf("%s ", cmd.argv[i]);
-        //     }
-
-        //     puts("\n");
-        // }
-
 
 
         // handle the input
@@ -337,7 +322,14 @@ int main() {
             result = execute_full_user_input(num_commands, command_list);
         }
 
-        cleanup:
+
+        for (int i = 0; i < argc; i++){
+            free(command_list[i].argv);
+        }
+
+        free(command_list);
+
+        early_exit:
         free(args);
         free(line);
 
