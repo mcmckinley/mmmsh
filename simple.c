@@ -1,19 +1,19 @@
 #include <stdio.h>
-#include <stdlib.h> // malloc
-#include <string.h> // strlen
-#include <unistd.h> // pwd, cd
-#include <linux/limits.h> // path
-#include <sys/wait.h> // waitpid
+#include <stdlib.h> 
+#include <string.h>
+#include <unistd.h>
+#include <linux/limits.h>
+#include <sys/wait.h>
 
 // for suppressing specific unused variable warnings
 #define UNUSED(x) (void)(x)
+
 #define PARENT_RETURN_VAL 0
 #define CHILD_FAILED_EXECUTE 1
 #define DID_NOT_EXECUTE 2
 #define ERR_COULD_NOT_CREATE_PIPE 3
 
-
-// returns a newly allocated string
+// Read a line of input: return a null-terminated string
 char* read_line(void){
     char *buffer = NULL;
     size_t bufsize = 0;
@@ -36,7 +36,7 @@ char* read_line(void){
 char **parse_args(char *line, int *argc){
     const int bufsize = 64;
 
-    char **tokens = (char **)malloc(bufsize * sizeof(char*));
+    char **tokens = (char **)malloc(bufsize * sizeof (char*));
     char *token;
     char *delimiters = " ";
     int tokens_index = 0;
@@ -202,20 +202,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
     int status;
 
     for (int command_index = 0; command_index < argc; command_index++){
-        printf("executing command %d\n", command_index);
         struct command current_command = command_list[command_index];
-
-        // for (size_t i = 0; argv[i]; i++) {
-        //     size_t L = strnlen(argv[i], 1<<20);
-        //     if (L == (1<<20)) { 
-        //         fprintf(stderr, "arg %zu not NUL-terminated\n", i); abort(); 
-        //     }
-        // }
-
-        
-
-        // If there's something ahead in the pipeline, open a pipe to write to.
-
         pid = fork();
         if (pid == 0) {
             // Child process
@@ -305,12 +292,12 @@ int main() {
         // ignore the input if empty
         if (argc == 0 || !args[0]){
             result = DID_NOT_EXECUTE;
-            // oooOooOOooo controversial. trust me it belongs here.
+            // controversial. but I think it belongs here.
             goto early_exit;
         }
 
-        // parse the arguments into an array of 'commands'.
-        // these can be commands, or operators, such as |, >, >>
+        // parse the arguments into an array of commands. 
+        // If there is more than 1 command, they are implied to have a pipe operator between them
         int num_commands;
         struct command* command_list = parse_pipeline(argc, args, &num_commands);
 
@@ -319,14 +306,14 @@ int main() {
         if (strcmp(args[0], "exit") == 0) {
             puts("goodbye");
             should_exit = 1;
-        } else {
-            result = execute_full_user_input(num_commands, command_list);
+            goto early_exit;
         }
 
+        result = execute_full_user_input(num_commands, command_list);
 
-        for (int i = 0; i < num_commands; i++){
+        // Cleanup
+        for (int i = 0; i < num_commands; i++)
             free(command_list[i].argv);
-        }
 
         free(command_list);
 
@@ -334,16 +321,10 @@ int main() {
         free(args);
         free(line);
 
-        if (should_exit == 1){
+        if (should_exit)
             break;
-        }
-        if (result == CHILD_FAILED_EXECUTE){
+        if (result == CHILD_FAILED_EXECUTE)
             _exit(EXIT_FAILURE);
-        } 
-        // else if (result == PARENT_RETURN_VAL){
-        //     _exit(EXIT_SUCCESS);
-        // }
-
     }
     
     return 0;

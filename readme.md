@@ -1,20 +1,14 @@
-A simple shell.
+mmmsh: a simple shell
 
 I've begun this project as a way to learn C.
 
 todo:
 - setup guide
-- finish documentation
-- tests
-- piping & redirection
-- any other important shell features I might have missed
-- scrolling up/down through previous commands. could be really easy or a nuisance to implement
-- colors and fun stuff
+- finish documentation: function descriptions, style consistencies
+- tests: automatic scripts
 
+What I would make if I had more time
 
+- Command history / scrolling back with arrow keys: this is surprisingly complicated to implement. I want to keep this project relatively simple and easy to understand for a beginner.
+- Other important shell features I might have missed: job management, variables, etc
 
-**Difficult to Implement**
-
-Writing built in commands: easy
-Implementing piping: medium
-Combinining these two: *hard*
