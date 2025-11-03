@@ -280,6 +280,15 @@ int main(void) {
             goto early_exit;
         }
 
+        // first, check for the two builtins, exit and cd:
+        if (strcmp(args[0], "exit") == 0){
+            should_exit = 1;
+            goto early_exit;
+        }
+        if (strcmp(args[0], "cd") == 0){
+            (*change_directory)(argc, args);
+            goto early_exit;
+        }
         
         // parse the arguments into an array of commands. 
         // If there is more than 1 command, they are implied to have a pipe operator between them
@@ -287,17 +296,6 @@ int main(void) {
         struct command* command_list = parse_pipeline(argc, args, &num_commands);
         
         
-        // first, check for the two builtins, exit and cd:
-        if (num_commands == 1){
-            if (strcmp(command_list[0].argv[0], "exit") == 0){
-                should_exit = 1;
-                goto early_exit;
-            }
-            if (strcmp(command_list[0].argv[0], "cd") == 0){
-                (*change_directory)(command_list[0].argc, command_list[0].argv);
-                goto early_exit;
-            }
-        }
         
         // Normal command: execute
         result = execute_full_user_input(num_commands, command_list);
@@ -307,7 +305,7 @@ int main(void) {
             free(command_list[i].argv);
 
         free(command_list);
-
+        
         early_exit:
         free(args);
         free(line);
