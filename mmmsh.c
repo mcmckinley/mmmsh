@@ -192,9 +192,8 @@ int execute_full_user_input(int argc, struct command* command_list) {
 
     for (int command_index = 0; command_index < argc; command_index++){
         struct command current_command = command_list[command_index];
-        int pid = fork();
+        pid_t pid = fork();
         if (pid == 0) {
-            pids[command_index] = pid;
             // Child process
             // Read from previous pipe, not STDIN
             if (command_index != 0){
@@ -205,13 +204,13 @@ int execute_full_user_input(int argc, struct command* command_list) {
             if (command_index < argc - 1){
                 dup2(pipes[command_index][1], STDOUT_FILENO);
             }
-
+            
             // in the child, we need to close every pipe, not just the one we just used
             for (int j = 0; j < argc - 1; j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
-
+            
             // check builtin
             for (size_t i = 0; i < num_builtins; i++){
                 if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
@@ -219,12 +218,19 @@ int execute_full_user_input(int argc, struct command* command_list) {
                     _exit(EXIT_SUCCESS);
                 }
             }
-            // execute normally
-            if (execvp(current_command.argv[0], current_command.argv) == -1) {
-                perror("mmmsh");
-            } 
-            // execvp ONLY returns if an error occurred.
+            // if execvp succeeds, the program here does not continue
+            execvp(current_command.argv[0], current_command.argv);
+            perror("mmmsh");
             _exit(EXIT_FAILURE);
+        } else if (pid < 0) {
+            // fork failed, close fds
+            for (int j = 0; j < argc - 1; j++) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+        } else {
+            // parent: save pid
+            pids[command_index] = pid;
         }
     }
     // parent closes all pipes
@@ -245,7 +251,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
 // returns: 0 keep running; 1 request exit
 
 int main(void) {
-    // tells you wether the input is coming from the terminal.
+    // tells you whether the input is coming from the terminal.
     int interactive = isatty(STDIN_FILENO);
 
     char *line;
@@ -305,7 +311,7 @@ int main(void) {
             free(command_list[i].argv);
 
         free(command_list);
-        
+
         early_exit:
         free(args);
         free(line);

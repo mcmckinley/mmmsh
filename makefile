@@ -1,2 +1,2 @@
-simple: simple.c
-	gcc -Wall -Wextra -Wpedantic -Werror -g -o mmmsh simple.c 
+mmmsh: mmmsh.c
+	gcc -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -g -o mmmsh mmmsh.c 
