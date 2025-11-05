@@ -33,6 +33,9 @@ char* read_line(void){
 }
 
 // split up a string into a string array, delimited by spaces
+// char *line - the input string
+// *argc      - set to the number of args in char* line
+// returns char** - each token from the input string that is seperated by spaces/tabs
 char **parse_args(char *line, int *argc){
     int bufsize = 64;
     char **tokens = (char **)malloc(bufsize * sizeof (char*));
@@ -51,9 +54,7 @@ char **parse_args(char *line, int *argc){
     return tokens;
 }
 
-// 
-// BUILTIN COMMANDS
-// 
+// Stateless builtin commands
 
 int echo(int argc, char **args){
     for (int i = 1; i < argc; i++){
@@ -63,24 +64,6 @@ int echo(int argc, char **args){
     printf("\n");
     return 0;
 }
-
-int change_directory(int argc, char **args){
-    const char *target = (argc == 1) ? getenv("HOME") : args[1];
-    if (!target) { 
-        fprintf(stderr, "cd: HOME not set");
-        return 1;
-    }
-    if (argc > 2) { 
-        fprintf(stderr, "cd: too many arguments");
-        return 1;
-    }
-    if (chdir(target) != 0) {
-        perror("cd");
-        return 1;
-    }
-    return 0;
-}
-
 int print_working_directory(int argc, char **args){
     UNUSED(args);
     if (argc > 1) {
@@ -96,28 +79,56 @@ int print_working_directory(int argc, char **args){
     free(cwd);
     return 0;
 }
-
-int (*built_in_commands[]) (int, char **) = {
+int (*stateless_built_ins[]) (int, char **) = {
   &echo,
   &print_working_directory,
-  &change_directory
 };
 
-char* built_in_command_names[] = {
+char* stateless_built_in_command_names[] = {
     "echo",
     "pwd",
-    "cd",
 };
+static const size_t num_stateless_built_ins = sizeof(stateless_built_in_command_names)/sizeof(stateless_built_in_command_names[0]);
 
-static const size_t num_builtins = sizeof(built_in_command_names)/sizeof(built_in_command_names[0]);
 
-// A single command to run
+// Stateful builtin commands
+
+int change_directory(int argc, char **args){
+    const char *target = (argc == 1) ? getenv("HOME") : args[1];
+    if (!target) { 
+        fprintf(stderr, "cd: HOME not set\n");
+        return 1;
+    }
+    if (argc > 2) { 
+        fprintf(stderr, "cd: too many arguments\n");
+        return 1;
+    }
+    if (chdir(target) != 0) {
+        perror("cd");
+        return 1;
+    }
+    return 0;
+}
+
+// Interpreting the input
+
+// Represents a command and its arguments
+//      argv - the arguments to be put into execvp
+//      argc - number of arguments
 struct command {
     char** argv;
     int argc;
 };
 
-// takes an array of tokens from the command prompt, and chops them up into an array of commands
+// takes the chopped input from parse_args, and further parses them into a pipeline
+// input:
+//      int argc - the number of individual tokens
+//      char** argv - the chopped input from parse_args
+// updated by reference:
+//      int* num_commands - set to the number of commands
+//      int* failed_to_parse - if set to 1, the parsing failed, and the output should be disregarded
+// return:
+//      command* - the resulting array of commands
 struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* failed_to_parse){
     UNUSED(failed_to_parse);
 
@@ -181,6 +192,12 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
 }
 
 
+// Executes a command array from parse_pipeline
+// input:
+//      int argc - the number of commands
+//      command* command_list - the list of commands
+// return:
+//      int - exit status of execution / last command
 
 int execute_pipeline(int argc, struct command* command_list) {
     if (argc <= 0) return 0;
@@ -230,9 +247,9 @@ int execute_pipeline(int argc, struct command* command_list) {
             }
             
             // check builtin
-            for (size_t i = 0; i < num_builtins; i++){
-                if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
-                    (*built_in_commands[i])(current_command.argc, current_command.argv);
+            for (size_t i = 0; i < num_stateless_built_ins; i++){
+                if (strcmp(current_command.argv[0], stateless_built_in_command_names[i]) == 0){
+                    (*stateless_built_ins[i])(current_command.argc, current_command.argv);
                     _exit(EXIT_SUCCESS);
                 }
             }
@@ -280,9 +297,6 @@ int execute_pipeline(int argc, struct command* command_list) {
     return last_status;
 }
 
-// two special commands: exit and cd
-// returns: 0 keep running; 1 request exit
-
 int main(void) {
     // tells you whether the input is coming from the terminal.
     int interactive = isatty(STDIN_FILENO);
@@ -290,13 +304,12 @@ int main(void) {
     char *line;
     char** args;
     int argc;
-    // int should_exit = 0;
     int last_status = 0;
-
+    
     while(1){
+        int status = 0;
         if (interactive) {
             printf("mmmsh(%d)$ ", last_status);
-            fflush(stdout);
         }
 
         line = read_line();
@@ -308,17 +321,9 @@ int main(void) {
         // collect all arguments
         args = parse_args(line, &argc);
 
-        
 
-        int status = -1;
-        UNUSED(status); // i'm still deciding whether or not to keep it. long term, it makes sense to have it.
-
-        // ignore the input if empty
-        if (argc == 0 || !args[0]){
-            status = 0;
-            // controversial. but I think it belongs here.
+        if (argc == 0 || !args[0])
             goto early_exit;
-        }
 
         // first, check for the two builtins, exit and cd:
         if (strcmp(args[0], "exit") == 0){
@@ -330,7 +335,7 @@ int main(void) {
             exit(code);
         }
         if (strcmp(args[0], "cd") == 0){
-            (*change_directory)(argc, args);
+            status = (*change_directory)(argc, args);
             goto early_exit;
         }
         
@@ -340,26 +345,22 @@ int main(void) {
         int failed_to_parse = 0;
         struct command* command_list = parse_pipeline(argc, args, &num_commands, &failed_to_parse);
 
-        if (failed_to_parse){
+        if (failed_to_parse)
             goto parse_fail;
-        }
-
         
-        
-        
-        // Normal command: execute
+        // Execute!
         status = execute_pipeline(num_commands, command_list);
 
-        
+        // Check status
         if (status == ERR_COULD_NOT_CREATE_PIPE)
-        fprintf(stderr, "error in pipe creation");
+            fprintf(stderr, "error in pipe creation");
         if (status == ERR_FORKING)
-        fprintf(stderr, "error in forking");
+            fprintf(stderr, "error in forking");
         
         // Cleanup
         parse_fail:
         for (int i = 0; i < num_commands; i++)
-        free(command_list[i].argv);
+            free(command_list[i].argv);
         free(command_list);
         
         early_exit:
