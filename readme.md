@@ -10,6 +10,12 @@ A minimal shell that supports basic commands and simple pipelines. I made this t
 - Pipelines: `cmd1 | cmd2 | ... | cmdN`
 - Graceful EOF handling (`Ctrl-D`)
 
+# Limitations
+
+- Limited parsing flexibility: Expects pipe operator to be seperated by spaces. `ls | grep readme.md` succeeds but `ls|grep readme.md` fails. 
+
+
+
 ## Out of scope (for now...)
 
 - Command history / scrolling back with arrow keys

@@ -12,6 +12,8 @@
 #define CHILD_FAILED_EXECUTE 1
 #define DID_NOT_EXECUTE 2
 #define ERR_COULD_NOT_CREATE_PIPE 3
+#define ERR_FORKING 4
+
 
 // Read a line of input: return a null-terminated string
 char* read_line(void){
@@ -67,11 +69,11 @@ int echo(int argc, char **args){
 int change_directory(int argc, char **args){
     const char *target = (argc == 1) ? getenv("HOME") : args[1];
     if (!target) { 
-        perror("cd: HOME not set\n");
+        fprintf(stderr, "cd: HOME not set");
         return 1;
     }
     if (argc > 2) { 
-        perror("cd: too many arguments\n");
+        fprintf(stderr, "cd: too many arguments");
         return 1;
     }
     if (chdir(target) != 0) {
@@ -84,7 +86,7 @@ int change_directory(int argc, char **args){
 int print_working_directory(int argc, char **args){
     UNUSED(args);
     if (argc > 1) {
-        perror("pwd: too many arguments\n");
+        puts("pwd: too many arguments\n");
         return 1;
     }
     char *cwd = getcwd(NULL, 0);
@@ -92,6 +94,7 @@ int print_working_directory(int argc, char **args){
         perror("pwd");
         return 1;
     }
+    puts(cwd);
     free(cwd);
     return 0;
 }
@@ -117,7 +120,9 @@ struct command {
 };
 
 // takes an array of tokens from the command prompt, and chops them up into an array of commands
-struct command* parse_pipeline(int argc, char **argv, int* num_commands){
+struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* failed_to_parse){
+    UNUSED(failed_to_parse);
+
     *num_commands = 0;
     int command_array_bufsize = 256; // this can grow dynamically
     int command_index = 0;
@@ -125,11 +130,18 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands){
     // allocating a dynamically sized buffer
     struct command* commands = (struct command*)malloc((command_array_bufsize + 1) * sizeof(struct command));
 
+    // tracks whether a pipe was the most recent thing received in the input stream. 
+    // If this is set, and the program sees another, it fails
+    // int just_received_pipe = 1;
+
     for (int i = 0; i < argc; i++){
         // Start: we're expecting a normal token
         if (strcmp(argv[i], "|") == 0){
-            puts("unexpected token");
-        } 
+            fprintf(stderr, "unexpected token: '|'\n");
+            *failed_to_parse = 1;
+            *num_commands = command_index;
+            return commands;
+        }
         
         int indiv_command_argv_bufsize = 256; // this can grow dynamically. excludes NULL
         
@@ -187,6 +199,8 @@ int execute_full_user_input(int argc, struct command* command_list) {
         }
     }
 
+    int launched = 0;
+
     // multiple process: multiple pids to wait for
     pid_t pids[argc];
 
@@ -211,6 +225,12 @@ int execute_full_user_input(int argc, struct command* command_list) {
                 close(pipes[j][1]);
             }
             
+            // error check
+            if (current_command.argc == 0 || current_command.argv[0] == NULL) {
+                fprintf(stderr, "command is NULL or has no args");
+                _exit(EXIT_FAILURE);
+            }
+            
             // check builtin
             for (size_t i = 0; i < num_builtins; i++){
                 if (strcmp(current_command.argv[0], built_in_command_names[i]) == 0){
@@ -223,14 +243,21 @@ int execute_full_user_input(int argc, struct command* command_list) {
             perror("mmmsh");
             _exit(EXIT_FAILURE);
         } else if (pid < 0) {
-            // fork failed, close fds
+            // pid < 0 means that the fork failed. we need to clean up.
+            // 1: close all pipes
             for (int j = 0; j < argc - 1; j++) {
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
+            // 2: wait for previous children to complete
+            for (int k = 0; k < launched; k++)
+                waitpid(pids[k], NULL, 0);
+            // 3: special err code
+            return ERR_FORKING;
         } else {
             // parent: save pid
             pids[command_index] = pid;
+            launched++;
         }
     }
     // parent closes all pipes
@@ -299,17 +326,28 @@ int main(void) {
         // parse the arguments into an array of commands. 
         // If there is more than 1 command, they are implied to have a pipe operator between them
         int num_commands;
-        struct command* command_list = parse_pipeline(argc, args, &num_commands);
+        int failed_to_parse = 0;
+        struct command* command_list = parse_pipeline(argc, args, &num_commands, &failed_to_parse);
+
+        if (failed_to_parse){
+            goto parse_fail;
+        }
+
         
         
         
         // Normal command: execute
         result = execute_full_user_input(num_commands, command_list);
 
+        if (result == ERR_COULD_NOT_CREATE_PIPE)
+            fprintf(stderr, "error in pipe creation");
+        if (result == ERR_FORKING)
+            fprintf(stderr, "error in forking");
+
         // Cleanup
+        parse_fail:
         for (int i = 0; i < num_commands; i++)
             free(command_list[i].argv);
-
         free(command_list);
 
         early_exit:
