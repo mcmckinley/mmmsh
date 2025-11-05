@@ -8,9 +8,7 @@
 // for suppressing specific unused variable warnings
 #define UNUSED(x) (void)(x)
 
-#define PARENT_RETURN_VAL 0
 #define CHILD_FAILED_EXECUTE 1
-#define DID_NOT_EXECUTE 2
 #define ERR_COULD_NOT_CREATE_PIPE 3
 #define ERR_FORKING 4
 
@@ -184,7 +182,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
 
 
 
-int execute_full_user_input(int argc, struct command* command_list) {
+int execute_pipeline(int argc, struct command* command_list) {
     if (argc <= 0) return 0;
 
     // for every command in the command_list, there is an input pipe and an output pipe.
@@ -252,6 +250,7 @@ int execute_full_user_input(int argc, struct command* command_list) {
             // 2: wait for previous children to complete
             for (int k = 0; k < launched; k++)
                 waitpid(pids[k], NULL, 0);
+
             // 3: special err code
             return ERR_FORKING;
         } else {
@@ -266,12 +265,19 @@ int execute_full_user_input(int argc, struct command* command_list) {
         close(pipes[i][1]);
     }
 
-    // parent must wait for everything
-    int status = 0;
-    for (int i = 0; i < argc; i++)
-        waitpid(pids[i], &status, 0);
+    // parent must wait for everything.
+    // also, track last command's status
+    int status = 0, last_status = 0;
+    for (int i = 0; i < argc; i++){
+        pid_t w = waitpid(pids[i], &status, 0);
+        if (w > 0 && i == argc - 1) {
+            if (WIFEXITED(status))      last_status = WEXITSTATUS(status);
+            else if (WIFSIGNALED(status)) last_status = 128 + WTERMSIG(status);
+            else                          last_status = 1;  // fallback, don't consider other errors
+        }
+    }
 
-    return PARENT_RETURN_VAL;
+    return last_status;
 }
 
 // two special commands: exit and cd
@@ -284,11 +290,12 @@ int main(void) {
     char *line;
     char** args;
     int argc;
-    int should_exit = 0;
+    // int should_exit = 0;
+    int last_status = 0;
 
     while(1){
         if (interactive) {
-            fputs("mmmsh$ ", stdout);
+            printf("mmmsh(%d)$ ", last_status);
             fflush(stdout);
         }
 
@@ -303,20 +310,24 @@ int main(void) {
 
         
 
-        int result = -1;
-        UNUSED(result); // i'm still deciding whether or not to keep it. long term, it makes sense to have it.
+        int status = -1;
+        UNUSED(status); // i'm still deciding whether or not to keep it. long term, it makes sense to have it.
 
         // ignore the input if empty
         if (argc == 0 || !args[0]){
-            result = DID_NOT_EXECUTE;
+            status = 0;
             // controversial. but I think it belongs here.
             goto early_exit;
         }
 
         // first, check for the two builtins, exit and cd:
         if (strcmp(args[0], "exit") == 0){
-            should_exit = 1;
-            goto early_exit;
+            if (argc > 2){
+                fprintf(stderr, "exit: too many arguments\n");
+                return 1;
+            }
+            int code = (argc == 2) ? atoi(args[1]) : last_status;
+            exit(code);
         }
         if (strcmp(args[0], "cd") == 0){
             (*change_directory)(argc, args);
@@ -337,25 +348,26 @@ int main(void) {
         
         
         // Normal command: execute
-        result = execute_full_user_input(num_commands, command_list);
+        status = execute_pipeline(num_commands, command_list);
 
-        if (result == ERR_COULD_NOT_CREATE_PIPE)
-            fprintf(stderr, "error in pipe creation");
-        if (result == ERR_FORKING)
-            fprintf(stderr, "error in forking");
-
+        
+        if (status == ERR_COULD_NOT_CREATE_PIPE)
+        fprintf(stderr, "error in pipe creation");
+        if (status == ERR_FORKING)
+        fprintf(stderr, "error in forking");
+        
         // Cleanup
         parse_fail:
         for (int i = 0; i < num_commands; i++)
-            free(command_list[i].argv);
+        free(command_list[i].argv);
         free(command_list);
-
+        
         early_exit:
         free(args);
         free(line);
-
-        if (should_exit)
-            break;
+        
+        if (status >= 0)
+            last_status = status;
     }
     
     return 0;
