@@ -4,11 +4,11 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/wait.h>
+#include <errno.h>
 
 // for suppressing specific unused variable warnings
 #define UNUSED(x) (void)(x)
 
-#define CHILD_FAILED_EXECUTE 1
 #define ERR_COULD_NOT_CREATE_PIPE 3
 #define ERR_FORKING 4
 
@@ -35,7 +35,7 @@ char* read_line(void){
 // split up a string into a string array, delimited by spaces
 // char *line - the input string
 // *argc      - set to the number of args in char* line
-// returns char** - each token from the input string that is seperated by spaces/tabs
+// returns char** - each token from the input string that is separated by spaces/tabs
 char **parse_args(char *line, int *argc){
     int bufsize = 64;
     char **tokens = (char **)malloc(bufsize * sizeof (char*));
@@ -67,7 +67,7 @@ int echo(int argc, char **args){
 int print_working_directory(int argc, char **args){
     UNUSED(args);
     if (argc > 1) {
-        puts("pwd: too many arguments\n");
+        fprintf(stderr, "pwd: too many arguments\n");
         return 1;
     }
     char *cwd = getcwd(NULL, 0);
@@ -174,6 +174,14 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
         commands[command_index] = current_command;
         command_index++;
 
+        // check if there's a trailing pipe
+        if (i == argc - 1) {               // this means the '|' was last
+            fprintf(stderr, "unexpected token at end: '|'\n");
+            *failed_to_parse = 1;
+            *num_commands = command_index;
+            return commands;
+        }
+
         // We've read everything in the input stream. Done!
         if (i == argc){
             break;
@@ -255,8 +263,9 @@ int execute_pipeline(int argc, struct command* command_list) {
             }
             // if execvp succeeds, the program here does not continue
             execvp(current_command.argv[0], current_command.argv);
+            if (errno == ENOENT) _exit(127);
             perror("mmmsh");
-            _exit(EXIT_FAILURE);
+            _exit(126);
         } else if (pid < 0) {
             // pid < 0 means that the fork failed. we need to clean up.
             // 1: close all pipes
@@ -310,6 +319,7 @@ int main(void) {
         int status = 0;
         if (interactive) {
             printf("mmmsh(%d)$ ", last_status);
+            fflush(stdout);
         }
 
         line = read_line();
@@ -352,10 +362,16 @@ int main(void) {
         status = execute_pipeline(num_commands, command_list);
 
         // Check status
-        if (status == ERR_COULD_NOT_CREATE_PIPE)
-            fprintf(stderr, "error in pipe creation");
-        if (status == ERR_FORKING)
-            fprintf(stderr, "error in forking");
+        switch (status) {
+            case ERR_COULD_NOT_CREATE_PIPE: 
+                fprintf(stderr, "error in pipe creation\n"); break;
+            case ERR_FORKING: 
+                fprintf(stderr, "error in forking\n"); break;
+            case 127:
+                fprintf(stderr, "error: command not found\n"); break;
+            default: 
+                break;
+        }
         
         // Cleanup
         parse_fail:

@@ -12,7 +12,7 @@ A minimal shell that supports basic commands and simple pipelines. I made this t
 
 # Limitations
 
-- Limited parsing flexibility: Expects pipe operator to be seperated by spaces. `ls | grep readme.md` succeeds but `ls|grep readme.md` fails. 
+- Limited parsing flexibility: Expects pipe operator to be separated by spaces. `ls | grep readme.md` succeeds but `ls|grep readme.md` fails. 
 
 
 
