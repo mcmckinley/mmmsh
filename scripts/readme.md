@@ -1,1 +1,0 @@
-all of these scripts (and the dockerfile) are written by chatgpt. i did it to save my computer. who knows what might go wrong when i'm messing around with this language i've never used before
