@@ -1,5 +1,7 @@
 # mmmsh — a tiny shell in C
 
+<video src="https://github.com/user-attachments/assets/851df9fb-9ba6-4333-acb1-f6fe536ff5da" autoplay loop muted playsinline></video>
+
 A UNIX-like shell that supports basic command syntax and pipelines. I made this to learn low-level programming in C.
 
 
