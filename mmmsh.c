@@ -54,43 +54,6 @@ char **parse_args(char *line, int *argc){
     return tokens;
 }
 
-// Stateless builtin commands
-
-int echo(int argc, char **args){
-    for (int i = 1; i < argc; i++){
-        if (i > 1) putchar(' ');
-        fputs(args[i], stdout);
-    }
-    printf("\n");
-    return 0;
-}
-int print_working_directory(int argc, char **args){
-    UNUSED(args);
-    if (argc > 1) {
-        fprintf(stderr, "pwd: too many arguments\n");
-        return 1;
-    }
-    char *cwd = getcwd(NULL, 0);
-    if (!cwd) {
-        perror("pwd");
-        return 1;
-    }
-    puts(cwd);
-    free(cwd);
-    return 0;
-}
-int (*stateless_built_ins[]) (int, char **) = {
-  &echo,
-  &print_working_directory,
-};
-
-char* stateless_built_in_command_names[] = {
-    "echo",
-    "pwd",
-};
-static const size_t num_stateless_built_ins = sizeof(stateless_built_in_command_names)/sizeof(stateless_built_in_command_names[0]);
-
-
 // Stateful builtin commands
 
 int change_directory(int argc, char **args){
@@ -122,14 +85,14 @@ struct command {
 
 // takes the chopped input from parse_args, and further parses them into a pipeline
 // input:
-//      int argc - the number of individual tokens
+//      int num_tokens - the number of individual tokens
 //      char** argv - the chopped input from parse_args
 // updated by reference:
 //      int* num_commands - set to the number of commands
 //      int* failed_to_parse - if set to 1, the parsing failed, and the output should be disregarded
 // return:
 //      command* - the resulting array of commands
-struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* failed_to_parse){
+struct command* parse_pipeline(int num_tokens, char **argv, int* num_commands, int* failed_to_parse){
     UNUSED(failed_to_parse);
 
     *num_commands = 0;
@@ -143,7 +106,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
     // If this is set, and the program sees another, it fails
     // int just_received_pipe = 1;
 
-    for (int i = 0; i < argc; i++){
+    for (int i = 0; i < num_tokens; i++){
         // Start: we're expecting a normal token
         if (strcmp(argv[i], "|") == 0){
             fprintf(stderr, "unexpected token: '|'\n");
@@ -159,7 +122,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
         current_command.argc = 0;
         
         int token_index = 0;
-        while (i < argc && strcmp(argv[i], "|") != 0){
+        while (i < num_tokens && strcmp(argv[i], "|") != 0){
             current_command.argv[token_index] = argv[i];
             token_index++;
             // see if this command needs more space to store its tokens
@@ -175,7 +138,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
         command_index++;
 
         // check if there's a trailing pipe
-        if (i == argc - 1) {               // this means the '|' was last
+        if (i == num_tokens - 1) {               // this means the '|' was last
             fprintf(stderr, "unexpected token at end: '|'\n");
             *failed_to_parse = 1;
             *num_commands = command_index;
@@ -183,7 +146,7 @@ struct command* parse_pipeline(int argc, char **argv, int* num_commands, int* fa
         }
 
         // We've read everything in the input stream. Done!
-        if (i == argc){
+        if (i == num_tokens){
             break;
         }
         
@@ -253,14 +216,7 @@ int execute_pipeline(int argc, struct command* command_list) {
                 fprintf(stderr, "command is NULL or has no args");
                 _exit(EXIT_FAILURE);
             }
-            
-            // check builtin
-            for (size_t i = 0; i < num_stateless_built_ins; i++){
-                if (strcmp(current_command.argv[0], stateless_built_in_command_names[i]) == 0){
-                    (*stateless_built_ins[i])(current_command.argc, current_command.argv);
-                    _exit(EXIT_SUCCESS);
-                }
-            }
+
             // if execvp succeeds, the program here does not continue
             execvp(current_command.argv[0], current_command.argv);
             if (errno == ENOENT) _exit(127);
@@ -369,6 +325,8 @@ int main(void) {
                 fprintf(stderr, "error in forking\n"); break;
             case 127:
                 fprintf(stderr, "error: command not found\n"); break;
+            case 126:
+                fprintf(stderr, "error: permission denied\n"); break;
             default: 
                 break;
         }
